@@ -1,28 +1,36 @@
-# Single .php File Host
-Minimalistic file host in a single PHP script.
+# TempShare - Minimalistic Temporary File Hosting
 
-`curl`-able like any proper file host and pastebin ought to be.  
-i.e. you can upload a file via `curl -F "file=@/path/to/your/file.jpg" https://example.com/`
+TempShare is a single-file PHP application that provides temporary file hosting with automatic cleanup based on file size. It supports uploads via web interface, command line (curl), and dedicated uploaders like ShareX (Windows) and Hupl (Android).
 
-Uploaded files get randomised names but keep their extensions. That means serving them is easily outsourced to the web server and is not handled by this script. 
+## Features
 
-There's also a mechanism for removing files over a certain age, which can be invoked by calling the script with a command line argument.
+- Web-based file upload interface
+- Command-line upload support via curl
+- Integration with ShareX and Hupl
+- Automatic file extension detection
+- Configurable file retention policy (larger files expire sooner)
+- Upload logging capabilities
+- External hook support
+- Responsive dark-themed modern UI
 
-# Config
-All configuration is done using the global variables at the top of **index.php**. Hopefully they're explained well enough in the short comments besides them.
+## Requirements
 
-To accommodate for larger uploads, you'll also need to set the following values in your php.ini:  
-upload_max_filesize  
-post_max_size  
-max_input_time  
-max_execution_time  
-(The output of index.php will also warn you, if any of those are set too small)
+- PHP 7.0+
+- PHP fileinfo extension
+- Write permissions to STORE_PATH directory
+- Appropriate PHP.ini settings
 
-The code responsible for the default info text can be found at the very bottom of index.php, in case you want to reword anything.
+## Installation
 
-## Apache
+1. Place `index.php` in your web root
+2. Ensure the STORE_PATH directory exists and is writable
+3. Configure your web server to execute PHP
 
-```
+## Server Configuration
+
+### Apache
+
+```apache
 <Directory /path/to/webroot/>
     Options +FollowSymLinks -MultiViews -Indexes
     AddDefaultCharset UTF-8
@@ -42,8 +50,9 @@ The code responsible for the default info text can be found at the very bottom o
 </Directory>
 ```
 
-## Nginx
-```
+### Nginx
+
+```nginx
 root /path/to/webroot;
 index index.php;
 
@@ -62,39 +71,79 @@ location = / {
 }
 ```
 
-# Purging Old Files
-To check for any files that exceed their max age and delete them, you need to call index.php with the argument "purge"  
+## Configuration
+
+All settings are in the `CONFIG` class:
+- `MAX_FILESIZE`: Max file size in MiB
+- `MAX_FILEAGE`/`MIN_FILEAGE`: Retention period in days
+- `DECAY_EXP`: Size decay exponent
+- `STORE_PATH`: Upload storage directory
+- `LOG_PATH`: Upload log path
+- `EXTERNAL_HOOK`: Custom processing hook
+- `AUTO_FILE_EXT`: Auto-detect extensions
+- `ADMIN_EMAIL`: Support contact
+
+Adjust these PHP settings in `php.ini`:
+- upload_max_filesize
+- post_max_size
+- max_input_time
+- max_execution_time
+
+## Usage
+
+### Web Upload
+Visit the page and use the upload form.
+
+### Command Line
+```bash
+curl -F "file=@/path/to/file.jpg" https://example.com/
+echo "hello" | curl -F "file=@-;filename=.txt" https://example.com/
+```
+
+### ShareX
+Visit `https://example.com/?sharex` to download the config file.
+
+### Hupl
+Visit `https://example.com/?hupl` to download the config file.
+
+## Purging Old Files
+
+Manual purge:
 ```bash
 php index.php purge
 ```
 
-To automate this, simply create a cron job:
+Automated via cron:
+```bash
+0 0 * * * php index.php purge > /dev/null
 ```
-0 0 * * * cd /path/to/the/root; php index.php purge > /dev/null
-```
-If you specify **$STORE_PATH** using an absolute path, you can omit the **cd**
 
+## File Retention Policy
 
-## Max. File Age
-The max age of a file is computed using the following formula:
-```
-$file_max_age = $MIN_FILEAGE +  
-                ($MAX_FILEAGE - $MIN_FILEAGE) *  
-                pow(1-($fileSize/$MAX_FILESIZE),$DECAY_EXP);
-```
-...which is a basic exponential decay curve that favours smaller files, meaning small files are kept longer and really big ones are deleted relatively quickly.  
-**$DECAY_EXP** is one of the configurable globals and basically makes the curve more or less exponential-looking. Set to 1 for a completely linear relationship.  
+Files are kept for a minimum of `MIN_FILEAGE` days and a maximum of `MAX_FILEAGE` days. Retention time is calculated by:
 
-# Related Things
-- [ssh2p](https://github.com/Rouji/ssh2p) and [nc2p](https://github.com/Rouji/nc2p) for adding the ability to upload via `ssh` and `netcat`.  
+```
+MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^DECAY_EXP
+```
+
+This means larger files expire sooner in a non-linear fashion.
+
+## Related Tools
+
+- [ssh2p](https://github.com/Rouji/ssh2p) and [nc2p](https://github.com/Rouji/nc2p): Upload via SSH/netcat
 - [Docker container](https://github.com/Rouji/single_php_filehost_docker)
 
-# FAQ
-**Q:** Can you add this or that feature?  
-**A:** This is mostly just a snapshot of what I'm doing on [x0.at](https://x0.at/). But I'm open to suggestions and PRs, as long as they do something useful that can't be done outside of the script itself (e.g. auth could be done in a .htaccess, malware scanning can be done in the `EXTERNAL_HOOK`, ...) and they don't go against the KISS principle.  
+## FAQ
 
-**Q:** Why is the index page so ugly? (And PRs regarding styling)  
-**A:** To some degree because of KISS, but also because I'm not trying to make the next super flashy, super popular Megaupload clone. This is more aimed at a minority of nerds with command line fetishes.
+**Q: Can you add this feature?**  
+A: The project follows KISS principles. I'm open to suggestions but avoid features that can be implemented externally (auth, scanning, etc).
 
-**Q:** OMG hosting this without user accounts or logins is so dangerous! Change that now!!1  
-**A:** I've been running x0.at for *years* now and like to think I know what I'm doing. I'll maybe consider changing how I run it, should it become a problem. *But* I also don't see that as a concern to be dealt with inside this script. If you want to run your copy of this with logins, use basic auth on top of it or something.  
+**Q: Why does the UI look modern?**  
+A: The interface was designed to be accessible and visually pleasing while maintaining simplicity.
+
+**Q: Is it safe without authentication?**  
+A: The service has operated safely for years. For authentication needs, use server-level solutions (basic auth, etc).
+
+## License
+
+This project is licensed under the GNU General Public License v3.0.
