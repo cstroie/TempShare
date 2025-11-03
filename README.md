@@ -71,6 +71,51 @@ location = / {
 }
 ```
 
+### Lighttpd
+
+```lighttpd
+server.modules += ("mod_rewrite", "mod_redirect")
+
+# Main rewrite rules
+url.rewrite-once = (
+    "^/?$" => "/index.php",
+    "^/(.+)$" => "/files/$1"
+)
+
+# Security: Prevent execution of PHP files in the files directory
+$HTTP["url"] =~ "^/files/" {
+    # Disable PHP execution
+    mimetype.assign = (
+        ".php" => "text/plain",
+        ".php5" => "text/plain",
+        ".html" => "text/plain",
+        ".htm" => "text/plain",
+        ".cpp" => "text/plain",
+        ".c" => "text/plain",
+        ".h" => "text/plain",
+        ".sh" => "text/plain"
+    )
+    
+    # Disable CGI execution
+    cgi.assign = ()
+}
+
+# PHP configuration
+fastcgi.server = (
+    ".php" => (
+        "localhost" => (
+            "socket" => "/var/run/php/php7.4-fpm.sock",
+            "broken-scriptfilename" => "enable"
+        )
+    )
+)
+
+# Directory permissions
+$HTTP["url"] =~ "^/files/" {
+    dir-listing.activate = "disable"
+}
+```
+
 ## Configuration
 
 All settings are in the `CONFIG` class:
