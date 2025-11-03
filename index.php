@@ -1,42 +1,135 @@
 <?php
+/**
+ * TempShare - A minimalistic temporary file hosting service
+ * 
+ * TempShare is a single-file PHP application that provides temporary file hosting
+ * with automatic cleanup based on file size. It allows users to upload files via
+ * web interface, command line (curl), or dedicated uploaders like ShareX and Hupl.
+ * 
+ * Features:
+ * - Web-based file upload interface
+ * - Command-line upload support via curl
+ * - Integration with ShareX (Windows) and Hupl (Android)
+ * - Automatic file extension detection
+ * - Configurable file retention policy (larger files expire sooner)
+ * - Upload logging capabilities
+ * - External hook support for custom processing
+ * - Responsive dark-themed modern UI
+ * 
+ * Configuration:
+ * All configuration is done through the CONFIG class constants:
+ * - MAX_FILESIZE: Maximum allowed file size in MiB
+ * - MAX_FILEAGE: Maximum retention period in days
+ * - MIN_FILEAGE: Minimum retention period in days
+ * - DECAY_EXP: Exponent for file size decay calculation
+ * - UPLOAD_TIMEOUT: Maximum upload time in seconds
+ * - ID_LENGTH: Length of generated file IDs
+ * - STORE_PATH: Directory for storing uploaded files
+ * - LOG_PATH: Path to upload log file (empty to disable)
+ * - DOWNLOAD_PATH: URL path pattern for downloads
+ * - MAX_EXT_LEN: Maximum file extension length
+ * - EXTERNAL_HOOK: External program to call for each upload
+ * - AUTO_FILE_EXT: Enable automatic file extension detection
+ * - ADMIN_EMAIL: Contact email for inquiries
+ * 
+ * Usage:
+ * 1. Web Upload: Visit the page and use the upload form
+ * 2. Curl Upload: 
+ *    curl -F "file=@/path/to/file.jpg" https://example.com/
+ *    echo "hello" | curl -F "file=@-;filename=.txt" https://example.com/
+ * 3. ShareX: Import the generated .sxcu configuration file
+ * 4. Hupl: Import the generated .hupl configuration file
+ * 5. CLI Purge: php index.php purge (to manually clean old files)
+ * 
+ * File Retention Policy:
+ * Files are kept for a minimum of MIN_FILEAGE days and a maximum of MAX_FILEAGE days.
+ * The actual retention time is calculated using the formula:
+ * MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^DECAY_EXP
+ * This means larger files expire sooner than smaller ones in a non-linear fashion.
+ * 
+ * Requirements:
+ * - PHP 7.0 or higher
+ * - PHP fileinfo extension (for automatic file type detection)
+ * - Write permissions to STORE_PATH directory
+ * - Appropriate PHP.ini settings (upload_max_filesize, post_max_size, etc.)
+ * 
+ * @author Rouji <costinstroie@eridu.eu.org>
+ * @author Costin Stroie <costinstroie@eridu.eu.org>
+ * @version 1.0
+ * @license GNU General Public License v3.0
+ * @link https://github.com/cstroie/TempShare
+ */
+
+/**
+ * Configuration class for TempShare service
+ * 
+ * This class contains all the configuration constants for the TempShare file hosting service.
+ * It defines file size limits, retention policies, storage paths, and other service settings.
+ */
 class CONFIG
 {
-    const MAX_FILESIZE = 512; //max. filesize in MiB
-    const MAX_FILEAGE = 180; //max. age of files in days
-    const MIN_FILEAGE = 31; //min. age of files in days
-    const DECAY_EXP = 2; //high values penalise larger files more
+    /** @var int Maximum file size in MiB */
+    const MAX_FILESIZE = 256;
+    
+    /** @var int Maximum age of files in days */
+    const MAX_FILEAGE = 30;
+    
+    /** @var int Minimum age of files in days */
+    const MIN_FILEAGE = 7;
+    
+    /** @var int Decay exponent - higher values penalize larger files more */
+    const DECAY_EXP = 6;
 
-    const UPLOAD_TIMEOUT = 5*60; //max. time an upload can take before it times out
-    const MIN_ID_LENGTH = 3; //min. length of the random file ID
-    const MAX_ID_LENGTH = 24; //max. length of the random file ID, set to MIN_ID_LENGTH to disable
-    const STORE_PATH = 'files/'; //directory to store uploaded files in
-    const LOG_PATH = null; //path to log uploads + resulting links to
-    const DOWNLOAD_PATH = '%s'; //the path part of the download url. %s = placeholder for filename
-    const MAX_EXT_LEN = 7; //max. length for file extensions
-    const EXTERNAL_HOOK = null; //external program to call for each upload
-    const AUTO_FILE_EXT = false; //automatically try to detect file extension for files that have none
+    /** @var int Maximum time an upload can take before it times out (in seconds) */
+    const UPLOAD_TIMEOUT = 5*60;
+    
+    /** @var int Length of the random file ID */
+    const ID_LENGTH = 3;
+    
+    /** @var string Directory to store uploaded files in */
+    const STORE_PATH = '/var/cache/lighttpd/uploads/0x0/';
+    
+    /** @var string Path to log uploads + resulting links to (empty string to disable) */
+    const LOG_PATH = '';
+    
+    /** @var string The path part of the download URL. %s = placeholder for filename */
+    const DOWNLOAD_PATH = '%s';
+    
+    /** @var int Maximum length for file extensions */
+    const MAX_EXT_LEN = 7;
+    
+    /** @var string|null External program to call for each upload (null to disable) */
+    const EXTERNAL_HOOK = null;
+    
+    /** @var bool Automatically try to detect file extension for files that have none */
+    const AUTO_FILE_EXT = false;
 
-    const FORCE_HTTPS = false; //force generated links to be https://
+    /** @var string Address for TempShare inquiries */
+    const ADMIN_EMAIL = 'costinstroie@eridu.eu.org';
 
-    const ADMIN_EMAIL = 'admin@example.com';  //address for inquiries
-
+    /**
+     * Get the full site URL
+     * 
+     * @return string The complete site URL including protocol and path
+     */
     public static function SITE_URL() : string
     {
-        $proto = ($_SERVER['HTTPS'] ?? 'off') == 'on' || CONFIG::FORCE_HTTPS ? 'https' : 'http';
-        return "$proto://{$_SERVER['HTTP_HOST']}";
-    }
-
-    public static function SCRIPT_URL() : string
-    {
-        return CONFIG::SITE_URL().$_SERVER['REQUEST_URI'];
+        $proto = ($_SERVER['HTTPS'] ?? 'off') == 'on' ? 'https' : 'http';
+        return "$proto://{$_SERVER['HTTP_HOST']}{$_SERVER['REQUEST_URI']}";
     }
 };
 
 
-// generate a random string of characters with given length
+/**
+ * Generate a random string of characters with given length
+ * 
+ * @param int $len Length of the string to generate
+ * @return string Random string of specified length
+ */
 function rnd_str(int $len) : string
 {
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    //$chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    $chars = 'abcdefghijklmnopqrstuvwxyz';
     $max_idx = strlen($chars) - 1;
     $out = '';
     while ($len--)
@@ -46,7 +139,14 @@ function rnd_str(int $len) : string
     return $out;
 }
 
-// check php.ini settings and print warnings if anything's not configured properly
+/**
+ * Check PHP configuration settings and print warnings if anything's not configured properly
+ * 
+ * This function compares important PHP ini settings with the application's requirements
+ * and prints warnings if the ini values are lower than what the application expects.
+ * 
+ * @return void
+ */
 function check_config() : void
 {
     $warn_config_value = function($ini_name, $var_name, $var_val)
@@ -62,7 +162,15 @@ function check_config() : void
     $warn_config_value('max_execution_time', 'UPLOAD_TIMEOUT', CONFIG::UPLOAD_TIMEOUT);
 }
 
-//extract extension from a path (does not include the dot)
+/**
+ * Extract extension from a path (does not include the dot)
+ * 
+ * This function handles special cases like .tar.* archives where there are
+ * two extensions (e.g., file.tar.gz).
+ * 
+ * @param string $path File path to extract extension from
+ * @return string File extension without the dot, or empty string if no extension
+ */
 function ext_by_path(string $path) : string
 {
     $ext = pathinfo($path, PATHINFO_EXTENSION);
@@ -75,6 +183,16 @@ function ext_by_path(string $path) : string
     return $ext;
 }
 
+/**
+ * Extract file extension using the fileinfo extension
+ * 
+ * This function uses PHP's finfo extension to determine the file type
+ * and derive an appropriate extension. If the file is detected as text,
+ * it returns 'txt'.
+ * 
+ * @param string $path Path to the file
+ * @return string Detected file extension or empty string if undetermined
+ */
 function ext_by_finfo(string $path) : string
 {
     $finfo = finfo_open(FILEINFO_EXTENSION);
@@ -97,12 +215,23 @@ function ext_by_finfo(string $path) : string
     return '';
 }
 
-// store an uploaded file, given its name and temporary path (e.g. values straight out of $_FILES)
-// files are stored wit a randomised name, but with their original extension
-//
-// $name: original filename
-// $tmpfile: temporary path of uploaded file
-// $formatted: set to true to display formatted message instead of bare link
+/**
+ * Store an uploaded file with a randomized name but preserving its original extension
+ * 
+ * This function handles the complete file storage process:
+ * 1. Validates file size
+ * 2. Determines appropriate file extension
+ * 3. Generates a unique filename
+ * 4. Moves the file to its final location
+ * 5. Executes external hooks if configured
+ * 6. Logs the upload if logging is enabled
+ * 7. Returns the download URL
+ * 
+ * @param string $name Original filename from the upload
+ * @param string $tmpfile Temporary path of uploaded file (from $_FILES)
+ * @param bool $formatted Set to true to display formatted message instead of bare link
+ * @return void
+ */
 function store_file(string $name, string $tmpfile, bool $formatted = false) : void
 {
     //create folder, if it doesn't exist
@@ -133,13 +262,7 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     }
     $ext = substr($ext, 0, CONFIG::MAX_EXT_LEN);
     $tries_per_len=3; //try random names a few times before upping the length
-
-    $id_length=CONFIG::MIN_ID_LENGTH;
-    if(isset($_POST['id_length']) && ctype_digit($_POST['id_length'])) {
-        $id_length = max(CONFIG::MIN_ID_LENGTH, min(CONFIG::MAX_ID_LENGTH, $_POST['id_length']));
-    }
-
-    for ($len = $id_length; ; ++$len)
+    for ($len = CONFIG::ID_LENGTH; ; ++$len)
     {
         for ($n=0; $n<=$tries_per_len; ++$n)
         {
@@ -159,26 +282,25 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
         header('HTTP/1.0 520 Unknown Error');
         return;
     }
-
+    
     if (CONFIG::EXTERNAL_HOOK !== null)
     {
         putenv('REMOTE_ADDR='.$_SERVER['REMOTE_ADDR']);
         putenv('ORIGINAL_NAME='.$name);
         putenv('STORED_FILE='.$target_file);
         $ret = -1;
-        $out = null;
-        $last_line = exec(CONFIG::EXTERNAL_HOOK, $out, $ret);
-        if ($last_line !== false && $ret !== 0)
+        $out = exec(CONFIG::EXTERNAL_HOOK, $_ = null, $ret);
+        if ($out !== false && $ret !== 0)
         {
             unlink($target_file);
             header('HTTP/1.0 400 Bad Request');
-            print("Error: $last_line\n");
+            print("Error: $out\n");
             return;
         }
     }
 
     //print the download link of the file
-    $url = sprintf(CONFIG::SITE_URL().'/'.CONFIG::DOWNLOAD_PATH, $basename);
+    $url = sprintf(CONFIG::SITE_URL().CONFIG::DOWNLOAD_PATH, $basename);
 
     if ($formatted)
     {
@@ -206,7 +328,15 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
     }
 }
 
-// purge all files older than their retention period allows.
+/**
+ * Purge all files older than their retention period allows
+ * 
+ * This function implements the file retention policy based on file size.
+ * Larger files are deleted earlier than small ones using a decay formula:
+ * MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^DECAY_EXP
+ * 
+ * @return void
+ */
 function purge_files() : void
 {
     $num_del = 0;    //number of deleted files
@@ -251,6 +381,13 @@ function purge_files() : void
     print("Deleted $num_del files totalling $total_size MiB\n");
 }
 
+/**
+ * Send a text file to the client with appropriate headers
+ * 
+ * @param string $filename Name of the file to send
+ * @param string $content Content of the file
+ * @return void
+ */
 function send_text_file(string $filename, string $content) : void
 {
     header('Content-type: application/octet-stream');
@@ -259,11 +396,18 @@ function send_text_file(string $filename, string $content) : void
     print($content);
 }
 
-// send a ShareX custom uploader config as .json
+/**
+ * Send a ShareX custom uploader configuration as .sxcu file
+ * 
+ * This function generates and sends a ShareX configuration file that allows
+ * users to easily configure ShareX to upload files to this TempShare instance.
+ * 
+ * @return void
+ */
 function send_sharex_config() : void
 {
     $name = $_SERVER['SERVER_NAME'];
-    $site_url = str_replace("?sharex", "", CONFIG::SCRIPT_URL());
+    $site_url = CONFIG::SITE_URL();
     send_text_file($name.'.sxcu', <<<EOT
 {
   "Name": "$name",
@@ -276,11 +420,18 @@ function send_sharex_config() : void
 EOT);
 }
 
-// send a Hupl uploader config as .hupl (which is just JSON)
+/**
+ * Send a Hupl uploader configuration as .hupl file
+ * 
+ * This function generates and sends a Hupl configuration file that allows
+ * Android users to easily configure Hupl to upload files to this TempShare instance.
+ * 
+ * @return void
+ */
 function send_hupl_config() : void
 {
     $name = $_SERVER['SERVER_NAME'];
-    $site_url = str_replace("?hupl", "", CONFIG::SCRIPT_URL());
+    $site_url = CONFIG::SITE_URL();
     send_text_file($name.'.hupl', <<<EOT
 {
   "name": "$name",
@@ -291,11 +442,21 @@ function send_hupl_config() : void
 EOT);
 }
 
-// print a plaintext info page, explaining what this script does and how to
-// use it, how to upload, etc.
+/**
+ * Print the main index page with usage instructions and upload form
+ * 
+ * This function generates the HTML for the main page that users see when
+ * they visit the TempShare service. It includes:
+ * - Upload form
+ * - Usage instructions for various methods (curl, ShareX, Hupl)
+ * - File retention policy information
+ * - Contact information
+ * 
+ * @return void
+ */
 function print_index() : void
 {
-    $site_url = CONFIG::SCRIPT_URL();
+    $site_url = CONFIG::SITE_URL();
     $sharex_url = $site_url.'?sharex';
     $hupl_url = $site_url.'?hupl';
     $decay = CONFIG::DECAY_EXP;
@@ -303,70 +464,287 @@ function print_index() : void
     $max_size = CONFIG::MAX_FILESIZE;
     $max_age = CONFIG::MAX_FILEAGE;
     $mail = CONFIG::ADMIN_EMAIL;
-    $max_id_length = CONFIG::MAX_ID_LENGTH;
 
-    $length_info = "\nTo use a longer file ID (up to $max_id_length characters), add -F id_length=&lt;number&gt;\n";
-    if (CONFIG::MIN_ID_LENGTH == CONFIG::MAX_ID_LENGTH)
-    {
-        $length_info  = "";
-    }
 
 echo <<<EOT
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Filehost</title>
+    <title>TempShare</title>
     <meta name="description" content="Minimalistic service for sharing temporary files." />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --bg-tertiary: #2d2d2d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --accent: #bb86fc;
+            --accent-hover: #d0a6ff;
+            --border: #333333;
+            --success: #4caf50;
+            --warning: #ff9800;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            color: var(--accent);
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 30px;
+        }
+
+        @media (min-width: 768px) {
+            .container {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .card {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border);
+        }
+
+        .card-title {
+            color: var(--accent);
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .card-title::before {
+            content: "●";
+            color: var(--accent);
+            margin-right: 10px;
+            font-size: 0.8rem;
+        }
+
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        input[type="file"] {
+            padding: 12px;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+
+        input[type="file"]::file-selector-button {
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 12px;
+            margin-right: 10px;
+            cursor: pointer;
+        }
+
+        input[type="file"]::file-selector-button:hover {
+            background-color: var(--accent);
+            color: var(--bg-primary);
+        }
+
+        .btn {
+            background-color: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 4px;
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .info-section {
+            margin-top: 20px;
+        }
+
+        .info-section h3 {
+            color: var(--text-secondary);
+            margin: 15px 0 10px;
+            font-size: 1.2rem;
+        }
+
+        p {
+            margin-bottom: 15px;
+        }
+
+        code {
+            background-color: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        pre {
+            background-color: var(--bg-tertiary);
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            margin: 15px 0;
+        }
+
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        .formula {
+            text-align: center;
+            font-family: 'Courier New', monospace;
+            background-color: var(--bg-tertiary);
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+            font-size: 1.1rem;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding: 20px;
+            color: var(--text-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        .hint {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-style: italic;
+            margin-top: 10px;
+        }
+    </style>
 </head>
 <body>
-<pre>
- === How To Upload ===
-You can upload files to this site via a simple HTTP POST, e.g. using curl:
-curl -F "file=@/path/to/your/file.jpg" $site_url
+    <header>
+        <h1>TempShare</h1>
+        <p class="subtitle">Minimalistic service for sharing temporary files</p>
+    </header>
 
-Or if you want to pipe to curl *and* have a file extension, add a "filename":
-echo "hello" | curl -F "file=@-;filename=.txt" $site_url
-$length_info
-On Windows, you can use <a href="https://getsharex.com/">ShareX</a> and import <a href="$sharex_url">this</a> custom uploader.
-On Android, you can use an app called <a href="https://github.com/Rouji/Hupl">Hupl</a> with <a href="$hupl_url">this</a> uploader.
+    <div class="container">
+        <div class="card">
+            <h2 class="card-title">Upload File to TempShare</h2>
+            <form class="upload-form" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="file">Choose a file to upload:</label>
+                    <input type="file" name="file" id="file" required />
+                </div>
+                <input type="hidden" name="formatted" value="true" />
+                <button type="submit" class="btn">Upload File</button>
+            </form>
+            <p class="hint">Hint: If you're lucky, your browser may support drag-and-drop onto the file selection input.</p>
+            
+            <div class="info-section">
+                <h3>Upload via Command Line</h3>
+                <p>You can upload files to this site via a simple HTTP POST, e.g. using curl:</p>
+                <pre>curl -F "file=@/path/to/your/file.jpg" $site_url</pre>
+                <p>Or if you want to pipe to curl <em>and</em> have a file extension, add a "filename":</p>
+                <pre>echo "hello" | curl -F "file=@-;filename=.txt" $site_url</pre>
+            </div>
+        </div>
 
+        <div class="card">
+            <h2 class="card-title">Upload with Applications</h2>
+            <div class="info-section">
+                <h3>Windows</h3>
+                <p>On Windows, you can use <a href="https://getsharex.com/">ShareX</a> and import <a href="$sharex_url">this</a> custom uploader.</p>
+            </div>
+            <div class="info-section">
+                <h3>Android</h3>
+                <p>On Android, you can use an app called <a href="https://github.com/Rouji/Hupl">Hupl</a> with <a href="$hupl_url">this</a> uploader.</p>
+            </div>
 
-Or simply choose a file and click "Upload" below:
-(Hint: If you're lucky, your browser may support drag-and-drop onto the file 
-selection input.)
-</pre>
-<form id="frm" method="post" enctype="multipart/form-data">
-<input type="file" name="file" id="file" />
-<input type="hidden" name="formatted" value="true" />
-<input type="submit" value="Upload"/>
-</form>
-<pre>
+            <h2 class="card-title">TempShare Retention Policy</h2>
+            <div class="info-section">
+                <p>The maximum allowed file size is <strong>$max_size MiB</strong>.</p>
+                <p>Files are kept for a minimum of <strong>$min_age</strong>, and a maximum of <strong>$max_age Days</strong>.</p>
+                <p>How long a file is kept depends on its size. Larger files are deleted earlier than small ones. This relation is non-linear and skewed in favour of small files.</p>
+                <p>The exact formula for determining the maximum age for a file is:</p>
+                <div class="formula">
+                    MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))<sup>$decay</sup>
+                </div>
+            </div>
 
+            <h2 class="card-title">Source & Contact</h2>
+            <div class="info-section">
+                <h3>Source Code</h3>
+                <p>The PHP script used to provide this service is open source and available on <a href="https://github.com/Rouji/single_php_filehost">GitHub</a></p>
+            </div>
+            <div class="info-section">
+                <h3>Contact</h3>
+                <p>If you want to report abuse of this service, or have any other inquiries, please write an email to <a href="mailto:$mail">$mail</a></p>
+            </div>
+        </div>
+    </div>
 
- === File Sizes etc. ===
-The maximum allowed file size is $max_size MiB.
-
-Files are kept for a minimum of $min_age, and a maximum of $max_age Days.
-
-How long a file is kept depends on its size. Larger files are deleted earlier 
-than small ones. This relation is non-linear and skewed in favour of small 
-files.
-
-The exact formula for determining the maximum age for a file is:
-
-MIN_AGE + (MAX_AGE - MIN_AGE) * (1-(FILE_SIZE/MAX_SIZE))^$decay
-
-
- === Source ===
-The PHP script used to provide this service is open source and available on 
-<a href="https://github.com/Rouji/single_php_filehost">GitHub</a>
-
-
- === Contact ===
-If you want to report abuse of this service, or have any other inquiries, 
-please write an email to $mail
-</pre>
+    <footer>
+        <p>TempShare Service</p>
+    </footer>
 </body>
 </html>
 EOT;
