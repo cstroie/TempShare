@@ -304,7 +304,24 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
 
     if ($formatted)
     {
-        print("<pre>Access your file here: <a href=\"$url\">$url</a></pre>");
+        // Calculate file retention time
+        $file_size = filesize($tmpfile) / (1024*1024); // size in MiB
+        $retention_days = CONFIG::MIN_FILEAGE +
+                         (CONFIG::MAX_FILEAGE - CONFIG::MIN_FILEAGE) *
+                         pow(1 - ($file_size / CONFIG::MAX_FILESIZE), CONFIG::DECAY_EXP);
+        $retention_date = date('Y-m-d H:i:s', time() + ($retention_days * 24 * 60 * 60));
+        
+        print("<div style='background-color: #2d2d2d; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid #444;'>");
+        print("<h3 style='color: #bb86fc; margin-top: 0;'>Upload Successful!</h3>");
+        print("<p style='margin: 10px 0;'><strong>File:</strong> " . htmlspecialchars($name) . "</p>");
+        print("<p style='margin: 10px 0;'><strong>Size:</strong> " . number_format($file_size, 2) . " MiB</p>");
+        print("<p style='margin: 10px 0;'><strong>Expires:</strong> " . htmlspecialchars($retention_date) . " (in " . round($retention_days) . " days)</p>");
+        print("<p style='margin: 15px 0 5px 0;'><strong>Download Link:</strong></p>");
+        print("<div style='background-color: #1e1e1e; padding: 12px; border-radius: 4px; word-break: break-all; font-family: monospace; font-size: 0.9em;'>");
+        print("<a href='" . htmlspecialchars($url) . "' style='color: #bb86fc; text-decoration: none;' target='_blank'>" . htmlspecialchars($url) . "</a>");
+        print("</div>");
+        print("<p style='margin: 15px 0 0 0; font-size: 0.9em; color: #aaa;'><em>Bookmark this link or copy it before closing this page</em></p>");
+        print("</div>");
     }
     else
     {
