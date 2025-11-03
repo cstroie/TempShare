@@ -311,17 +311,180 @@ function store_file(string $name, string $tmpfile, bool $formatted = false) : vo
                          pow(1 - ($file_size / CONFIG::MAX_FILESIZE), CONFIG::DECAY_EXP);
         $retention_date = date('Y-m-d H:i:s', time() + ($retention_days * 24 * 60 * 60));
         
-        print("<div style='background-color: #2d2d2d; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 4px 8px rgba(0,0,0,0.3); border: 1px solid #444;'>");
-        print("<h3 style='color: #bb86fc; margin-top: 0;'>Upload Successful!</h3>");
-        print("<p style='margin: 10px 0;'><strong>File:</strong> " . htmlspecialchars($name) . "</p>");
-        print("<p style='margin: 10px 0;'><strong>Size:</strong> " . number_format($file_size, 2) . " MiB</p>");
-        print("<p style='margin: 10px 0;'><strong>Expires:</strong> " . htmlspecialchars($retention_date) . " (in " . round($retention_days) . " days)</p>");
-        print("<p style='margin: 15px 0 5px 0;'><strong>Download Link:</strong></p>");
-        print("<div style='background-color: #1e1e1e; padding: 12px; border-radius: 4px; word-break: break-all; font-family: monospace; font-size: 0.9em;'>");
-        print("<a href='" . htmlspecialchars($url) . "' style='color: #bb86fc; text-decoration: none;' target='_blank'>" . htmlspecialchars($url) . "</a>");
-        print("</div>");
-        print("<p style='margin: 15px 0 0 0; font-size: 0.9em; color: #aaa;'><em>Bookmark this link or copy it before closing this page</em></p>");
-        print("</div>");
+        $site_url = CONFIG::SITE_URL();
+        echo <<<EOT
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>TempShare - Upload Successful</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --bg-tertiary: #2d2d2d;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --accent: #bb86fc;
+            --accent-hover: #d0a6ff;
+            --border: #333333;
+            --success: #4caf50;
+            --warning: #ff9800;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            color: var(--accent);
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+
+        .card {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .card-title {
+            color: var(--accent);
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .card-title::before {
+            content: "●";
+            color: var(--success);
+            margin-right: 10px;
+            font-size: 0.8rem;
+        }
+
+        .info-item {
+            margin: 15px 0;
+        }
+
+        .info-label {
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: inline-block;
+            width: 80px;
+        }
+
+        .info-value {
+            display: inline-block;
+        }
+
+        .download-link {
+            background-color: var(--bg-tertiary);
+            padding: 15px;
+            border-radius: 4px;
+            word-break: break-all;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            margin: 15px 0;
+        }
+
+        .download-link a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .download-link a:hover {
+            text-decoration: underline;
+        }
+
+        .note {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            font-style: italic;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+        }
+
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .back-link a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>TempShare</h1>
+        <p>Minimalistic service for sharing temporary files</p>
+    </header>
+
+    <div class="card">
+        <h2 class="card-title">Upload Successful!</h2>
+        
+        <div class="info-item">
+            <span class="info-label">File:</span>
+            <span class="info-value">{$name}</span>
+        </div>
+        
+        <div class="info-item">
+            <span class="info-label">Size:</span>
+            <span class="info-value">{$file_size} MiB</span>
+        </div>
+        
+        <div class="info-item">
+            <span class="info-label">Expires:</span>
+            <span class="info-value">{$retention_date} (in {$retention_days} days)</span>
+        </div>
+        
+        <div class="info-item">
+            <span class="info-label">Link:</span>
+            <div class="download-link">
+                <a href="{$url}" target="_blank">{$url}</a>
+            </div>
+        </div>
+        
+        <div class="note">
+            Bookmark this link or copy it before closing this page
+        </div>
+    </div>
+    
+    <div class="back-link">
+        <a href="{$site_url}">← Back to Upload Page</a>
+    </div>
+</body>
+</html>
+EOT;
     }
     else
     {
