@@ -53,7 +53,7 @@
  * - Write permissions to STORE_PATH directory
  * - Appropriate PHP.ini settings (upload_max_filesize, post_max_size, etc.)
  * 
- * @author Rouji <costinstroie@eridu.eu.org>
+ * @author Rouji <a@r0.at>
  * @author Costin Stroie <costinstroie@eridu.eu.org>
  * @version 1.0
  * @license GNU General Public License v3.0
